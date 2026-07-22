@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>飲食紀錄 — 重量科學</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="shell">
+
+  <header class="top">
+    <a class="brand" href="index.html">重量<span>科學</span></a>
+    <nav class="top">
+      <a href="index.html">首頁</a>
+      <a href="calculator.html">計算機</a>
+      <a href="foodlog.html" class="active">飲食紀錄</a>
+      <a href="knowledge.html">公式原理</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">STEP 02</div>
+    <h1 class="title">今天<br>吃了<em>什麼</em>。</h1>
+    <p class="lede">記錄每一餐，跟計算機算出的目標即時比對。資料存在資料庫裡，換裝置也看得到。</p>
+
+    <div class="calc">
+      <div class="foodlog-head">
+        <h2 class="h" style="margin:0;">飲食清單</h2>
+        <input type="date" id="logDate">
+      </div>
+
+      <div class="log-form">
+        <input type="text" id="fName" placeholder="食物名稱">
+        <input type="number" id="fCal" placeholder="熱量 kcal">
+        <input type="number" id="fProtein" placeholder="蛋白質 g">
+        <input type="number" id="fCarb" placeholder="碳水 g">
+        <input type="number" id="fFat" placeholder="脂肪 g">
+        <button class="log-add-btn" id="addFoodBtn">新增</button>
+      </div>
+      <div class="log-status" id="logStatus"></div>
+
+      <div class="log-list" id="logList"></div>
+
+      <div id="progressArea"></div>
+    </div>
+  </section>
+
+  <footer>重量科學 · BODY RECOMPOSITION CALCULATOR</footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+  function todayStr(){
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  const logDateInput = document.getElementById('logDate');
+  logDateInput.value = todayStr();
+
+  const statusEl = document.getElementById('logStatus');
+  function setStatus(msg, isErr){
+    statusEl.textContent = msg || '';
+    statusEl.classList.toggle('err', !!isErr);
+  }
+
+  function getTarget(){
+    try{ return JSON.parse(localStorage.getItem('dietTarget')); }
+    catch(e){ return null; }
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function fetchEntries(dateStr){
+    const { data, error } = await supabaseClient
+      .from('diet_logs')
+      .select('*')
+      .eq('log_date', dateStr)
+      .order('created_at', { ascending: true });
+
+    if(error){
+      setStatus('讀取失敗，請確認 config.js 裡的 Supabase 設定是否正確。（' + error.message + '）', true);
+      return [];
+    }
+    setStatus('');
+    return data;
+  }
+
+  async function renderLog(){
+    const dateStr = logDateInput.value || todayStr();
+    const listEl = document.getElementById('logList');
+    listEl.innerHTML = '<div class="log-empty">載入中…</div>';
+
+    const entries = await fetchEntries(dateStr);
+
+    if(entries.length === 0){
+      listEl.innerHTML = '<div class="log-empty">這天還沒有紀錄，新增第一筆吧。</div>';
+    }else{
+      listEl.innerHTML = entries.map(e => `
+        <div class="log-row">
+          <div class="fname">${escapeHtml(e.name)}</div>
+          <div class="fnum">${e.calories} kcal</div>
+          <div class="fnum hide-sm">${e.protein}g 蛋白</div>
+          <div class="fnum hide-sm">${e.carb}g 碳水</div>
+          <div class="fnum hide-sm">${e.fat}g 脂肪</div>
+          <button class="log-del" data-id="${e.id}">×</button>
+        </div>
+      `).join('');
+
+      listEl.querySelectorAll('.log-del').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.dataset.id;
+          const { error } = await supabaseClient.from('diet_logs').delete().eq('id', id);
+          if(error){ setStatus('刪除失敗：' + error.message, true); return; }
+          renderLog();
+        });
+      });
+    }
+
+    renderProgress(entries);
+  }
+
+  function renderProgress(entries){
+    const target = getTarget();
+    const area = document.getElementById('progressArea');
+
+    const totals = entries.reduce((acc, e)=>{
+      acc.cal += Number(e.calories)||0;
+      acc.protein += Number(e.protein)||0;
+      acc.carb += Number(e.carb)||0;
+      acc.fat += Number(e.fat)||0;
+      return acc;
+    }, {cal:0, protein:0, carb:0, fat:0});
+
+    if(!target){
+      area.innerHTML = `
+        <div class="no-target">
+          目前累計：${totals.cal} kcal · 蛋白質 ${totals.protein}g · 碳水 ${totals.carb}g · 脂肪 ${totals.fat}g<br>
+          先到「計算機」頁算出你的目標熱量，這裡就會顯示跟目標的比對進度。
+        </div>`;
+      return;
+    }
+
+    const rows = [
+      {label:'熱量', unit:'kcal', have:totals.cal, need:target.calories, cls:'cal'},
+      {label:'蛋白質', unit:'g', have:totals.protein, need:target.protein, cls:'protein'},
+      {label:'碳水化合物', unit:'g', have:totals.carb, need:target.carb, cls:'carb'},
+      {label:'脂肪', unit:'g', have:totals.fat, need:target.fat, cls:'fat'}
+    ];
+
+    area.innerHTML = rows.map(r=>{
+      const pct = r.need > 0 ? Math.min(100, Math.round((r.have / r.need) * 100)) : 0;
+      return `
+        <div class="progress-block">
+          <div class="progress-top">
+            <span class="lbl">${r.label}</span>
+            <span class="val">${Math.round(r.have)} / ${r.need} ${r.unit}（${pct}%）</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill ${r.cls}" style="width:${pct}%"></div></div>
+        </div>`;
+    }).join('');
+  }
+
+  document.getElementById('addFoodBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('fName').value.trim();
+    const calories = parseFloat(document.getElementById('fCal').value);
+    const protein = parseFloat(document.getElementById('fProtein').value) || 0;
+    const carb = parseFloat(document.getElementById('fCarb').value) || 0;
+    const fat = parseFloat(document.getElementById('fFat').value) || 0;
+
+    if(!name || isNaN(calories)){
+      setStatus('請至少填寫食物名稱與熱量。', true);
+      return;
+    }
+
+    const dateStr = logDateInput.value || todayStr();
+
+    const { error } = await supabaseClient.from('diet_logs').insert({
+      log_date: dateStr, name, calories, protein, carb, fat
+    });
+
+    if(error){
+      setStatus('新增失敗：' + error.message, true);
+      return;
+    }
+
+    document.getElementById('fName').value = '';
+    document.getElementById('fCal').value = '';
+    document.getElementById('fProtein').value = '';
+    document.getElementById('fCarb').value = '';
+    document.getElementById('fFat').value = '';
+    document.getElementById('fName').focus();
+
+    renderLog();
+  });
+
+  logDateInput.addEventListener('change', renderLog);
+
+  renderLog();
+</script>
+
+</body>
+</html>
