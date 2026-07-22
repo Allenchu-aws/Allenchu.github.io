@@ -46,6 +46,27 @@ create policy "public access" on diet_logs
 
 按 **Run**，跑完沒有紅字錯誤就代表資料表建好了。
 
+再貼上這段建立「常用食物」資料表（快速新增功能要用）：
+
+```sql
+create table favorite_foods (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  calories numeric not null,
+  protein numeric default 0,
+  carb numeric default 0,
+  fat numeric default 0,
+  created_at timestamptz default now()
+);
+
+alter table favorite_foods enable row level security;
+
+create policy "public access" on favorite_foods
+  for all
+  using (true)
+  with check (true);
+```
+
 ⚠️ 這個設定是「任何拿到你的 URL/anon key 的人都能讀寫這張表」，對單純個人記錄用途沒問題，但不要放進真正機密的資料。之後如果想加「登入才能看到自己的紀錄」，要接 Supabase Auth，屆時再回來調整這條 policy。
 
 ## Step 3：填入連線資訊
@@ -62,6 +83,11 @@ const SUPABASE_ANON_KEY = '你複製的anon key';
 ## Step 4：部署到 GitHub Pages
 
 把這整個資料夾（`index.html`、`calculator.html`、`foodlog.html`、`knowledge.html`、`style.css`、`config.js` 全部）上傳到你的 `allenchu-aws.github.io` repo（取代原本單一那個檔案），設定跟之前一樣不用改，`index.html` 會自動變成首頁。
+
+## 這版新增了什麼
+
+- **本週熱量攝取總覽**：飲食紀錄頁最上面會顯示過去 7 天（含當前選的日期）每天總熱量的長條圖，紅色代表超過目標、橘色是今天，並顯示 7 日平均。
+- **常用食物快選**：填好表單後按 ⭐ 存成常用食物，之後點一下 chip 就會把名稱/熱量/營養素自動帶入表單，不用每次都重新輸入。
 
 ## 之後想擴充
 

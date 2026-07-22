@@ -25,10 +25,23 @@
     <h1 class="title">今天<br>吃了<em>什麼</em>。</h1>
     <p class="lede">記錄每一餐，跟計算機算出的目標即時比對。資料存在資料庫裡，換裝置也看得到。</p>
 
+    <div class="calc week-card">
+      <div class="week-head">
+        <h2 class="h">本週熱量攝取</h2>
+        <div class="week-avg" id="weekAvg"></div>
+      </div>
+      <div class="week-chart" id="weekChart"></div>
+    </div>
+
     <div class="calc">
       <div class="foodlog-head">
         <h2 class="h" style="margin:0;">飲食清單</h2>
         <input type="date" id="logDate">
+      </div>
+
+      <div class="fav-wrap">
+        <div class="fav-label">常用食物（點一下帶入數值）</div>
+        <div class="fav-chips" id="favChips"></div>
       </div>
 
       <div class="log-form">
@@ -37,6 +50,7 @@
         <input type="number" id="fProtein" placeholder="蛋白質 g">
         <input type="number" id="fCarb" placeholder="碳水 g">
         <input type="number" id="fFat" placeholder="脂肪 g">
+        <button class="log-fav-btn" id="saveFavBtn" title="存成常用食物">⭐</button>
         <button class="log-add-btn" id="addFoodBtn">新增</button>
       </div>
       <div class="log-status" id="logStatus"></div>
@@ -121,11 +135,13 @@
           const { error } = await supabaseClient.from('diet_logs').delete().eq('id', id);
           if(error){ setStatus('刪除失敗：' + error.message, true); return; }
           renderLog();
+          renderWeek();
         });
       });
     }
 
     renderProgress(entries);
+    renderWeek();
   }
 
   function renderProgress(entries){
@@ -204,7 +220,147 @@
 
   logDateInput.addEventListener('change', renderLog);
 
+  /* ================= 常用食物快選 ================= */
+  async function renderFavs(){
+    const chipsEl = document.getElementById('favChips');
+    const { data, error } = await supabaseClient
+      .from('favorite_foods')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if(error){
+      chipsEl.innerHTML = '<div class="fav-empty">常用食物讀取失敗（' + escapeHtml(error.message) + '）</div>';
+      return;
+    }
+
+    if(!data || data.length === 0){
+      chipsEl.innerHTML = '<div class="fav-empty">還沒有存常用食物——填好左邊表單後按 ⭐ 就能存一個。</div>';
+      return;
+    }
+
+    chipsEl.innerHTML = data.map(f => `
+      <div class="fav-chip" data-id="${f.id}" data-name="${escapeHtml(f.name)}" data-cal="${f.calories}" data-protein="${f.protein}" data-carb="${f.carb}" data-fat="${f.fat}">
+        <span>${escapeHtml(f.name)}</span>
+        <span class="fc-cal">${f.calories}kcal</span>
+        <span class="fc-del" data-del-id="${f.id}">×</span>
+      </div>
+    `).join('');
+
+    chipsEl.querySelectorAll('.fav-chip').forEach(chip=>{
+      chip.addEventListener('click', (ev)=>{
+        if(ev.target.classList.contains('fc-del')) return;
+        document.getElementById('fName').value = chip.dataset.name;
+        document.getElementById('fCal').value = chip.dataset.cal;
+        document.getElementById('fProtein').value = chip.dataset.protein;
+        document.getElementById('fCarb').value = chip.dataset.carb;
+        document.getElementById('fFat').value = chip.dataset.fat;
+      });
+    });
+
+    chipsEl.querySelectorAll('.fc-del').forEach(delBtn=>{
+      delBtn.addEventListener('click', async (ev)=>{
+        ev.stopPropagation();
+        const id = delBtn.dataset.delId;
+        await supabaseClient.from('favorite_foods').delete().eq('id', id);
+        renderFavs();
+      });
+    });
+  }
+
+  document.getElementById('saveFavBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('fName').value.trim();
+    const calories = parseFloat(document.getElementById('fCal').value);
+    const protein = parseFloat(document.getElementById('fProtein').value) || 0;
+    const carb = parseFloat(document.getElementById('fCarb').value) || 0;
+    const fat = parseFloat(document.getElementById('fFat').value) || 0;
+
+    if(!name || isNaN(calories)){
+      setStatus('要先填食物名稱與熱量，才能存成常用食物。', true);
+      return;
+    }
+
+    const { error } = await supabaseClient.from('favorite_foods').insert({
+      name, calories, protein, carb, fat
+    });
+
+    if(error){ setStatus('存常用食物失敗：' + error.message, true); return; }
+    setStatus('已存成常用食物。');
+    renderFavs();
+  });
+
+  /* ================= 本週熱量總覽 ================= */
+  function addDays(dateStr, delta){
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  async function renderWeek(){
+    const endDateStr = logDateInput.value || todayStr();
+    const startDateStr = addDays(endDateStr, -6);
+    const today = todayStr();
+
+    const { data, error } = await supabaseClient
+      .from('diet_logs')
+      .select('log_date, calories')
+      .gte('log_date', startDateStr)
+      .lte('log_date', endDateStr);
+
+    const chartEl = document.getElementById('weekChart');
+    const avgEl = document.getElementById('weekAvg');
+
+    const byDay = {};
+    if(!error && data){
+      data.forEach(row=>{
+        byDay[row.log_date] = (byDay[row.log_date] || 0) + Number(row.calories||0);
+      });
+    }
+
+    const target = getTarget();
+    const targetCal = target ? target.calories : null;
+    const weekdayNames = ['日','一','二','三','四','五','六'];
+
+    const days = [];
+    for(let i = 6; i >= 0; i--){
+      const ds = addDays(endDateStr, -i);
+      days.push({ date: ds, cal: Math.round(byDay[ds] || 0) });
+    }
+
+    const maxVal = Math.max(targetCal || 0, ...days.map(d=>d.cal), 1);
+
+    chartEl.innerHTML = days.map(d=>{
+      const heightPct = Math.round((d.cal / maxVal) * 100);
+      const isToday = d.date === today;
+      const isOver = targetCal && d.cal > targetCal;
+      const dow = weekdayNames[new Date(d.date + 'T00:00:00').getDay()];
+      return `
+        <div class="week-col">
+          <div class="wv">${d.cal || ''}</div>
+          <div class="week-bar-track">
+            <div class="week-bar ${isOver ? 'over' : ''} ${isToday ? 'today' : ''}" data-h="${heightPct}"></div>
+          </div>
+          <div class="wd">${dow}</div>
+        </div>`;
+    }).join('');
+
+    // 用下一輪畫面更新觸發 transition，做出長高的動畫感
+    requestAnimationFrame(()=>{
+      chartEl.querySelectorAll('.week-bar').forEach(bar=>{
+        bar.style.height = bar.dataset.h + '%';
+      });
+    });
+
+    const validDays = days.filter(d=>d.cal > 0);
+    if(validDays.length > 0){
+      const avg = Math.round(validDays.reduce((s,d)=>s+d.cal,0) / validDays.length);
+      avgEl.innerHTML = '7 日平均 <b>' + avg + '</b> kcal' + (targetCal ? ' / 目標 ' + targetCal + ' kcal' : '');
+    }else{
+      avgEl.textContent = '這週還沒有紀錄';
+    }
+  }
+
   renderLog();
+  renderFavs();
 </script>
 
 </body>

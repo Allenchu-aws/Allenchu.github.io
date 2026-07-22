@@ -185,8 +185,24 @@ h1.title em{ font-style:normal; color:var(--plate-red); }
   font-family:'JetBrains Mono', monospace; font-size:13px; padding:9px 12px; border-radius:8px;
 }
 
+/* 常用食物快選 chips */
+.fav-wrap{ margin-bottom:20px; }
+.fav-label{ font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--mist); margin-bottom:10px; }
+.fav-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.fav-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--steel-2); border:1px solid var(--line); border-radius:999px;
+  padding:8px 14px; font-size:13px; color:var(--chalk); cursor:pointer;
+  transition:border-color 0.15s, background 0.15s; animation:fadeInUp 0.35s ease both;
+}
+.fav-chip:hover{ border-color:var(--brass); background:rgba(176,141,87,0.10); }
+.fav-chip .fc-cal{ color:var(--brass); font-family:'JetBrains Mono', monospace; font-size:11px; }
+.fav-chip .fc-del{ color:var(--mist); font-size:13px; margin-left:2px; }
+.fav-chip .fc-del:hover{ color:var(--plate-red); }
+.fav-empty{ color:var(--mist); font-size:12.5px; }
+
 .log-form{
-  display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr auto; gap:10px; margin-bottom:24px;
+  display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr auto auto; gap:10px; margin-bottom:8px;
 }
 @media (max-width:720px){ .log-form{ grid-template-columns:1fr 1fr; } }
 .log-form input{
@@ -200,12 +216,18 @@ h1.title em{ font-style:normal; color:var(--plate-red); }
   font-family:'Oswald', sans-serif; font-weight:600; font-size:14px; padding:0 18px;
   cursor:pointer; white-space:nowrap;
 }
-@media (max-width:720px){ .log-add-btn{ grid-column:1 / -1; padding:12px; } }
+.log-fav-btn{
+  background:transparent; color:var(--mist); border:1px solid var(--line); border-radius:9px;
+  font-size:16px; padding:0 14px; cursor:pointer; transition:border-color 0.15s, color 0.15s;
+}
+.log-fav-btn:hover{ border-color:var(--brass); color:var(--brass); }
+@media (max-width:720px){ .log-add-btn, .log-fav-btn{ grid-column:1 / -1; padding:12px; } }
 
 .log-list{ margin-bottom:28px; min-height:40px; }
 .log-row{
   display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr auto; gap:10px; align-items:center;
   padding:12px 0; border-bottom:1px solid var(--line); font-size:14px;
+  animation:fadeInUp 0.35s ease both;
 }
 @media (max-width:720px){ .log-row{ grid-template-columns:1.5fr 1fr 1fr auto; } .log-row .hide-sm{ display:none; } }
 .log-row .fname{ color:var(--chalk); }
@@ -219,12 +241,17 @@ h1.title em{ font-style:normal; color:var(--plate-red); }
 .log-status{ color:var(--mist); font-size:12.5px; padding:8px 0 0; font-family:'JetBrains Mono', monospace; }
 .log-status.err{ color:var(--plate-red); }
 
-.progress-block{ margin-bottom:16px; }
+@keyframes fadeInUp{
+  from{ opacity:0; transform:translateY(6px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+
+.progress-block{ margin-bottom:16px; animation:fadeInUp 0.4s ease both; }
 .progress-top{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:6px; }
 .progress-top .lbl{ color:var(--chalk-dim); }
 .progress-top .val{ font-family:'JetBrains Mono', monospace; color:var(--chalk); }
 .progress-track{ height:8px; background:var(--steel-2); border-radius:5px; overflow:hidden; }
-.progress-fill{ height:100%; border-radius:5px; transition:width 0.4s ease; }
+.progress-fill{ height:100%; border-radius:5px; width:0; transition:width 0.6s cubic-bezier(.2,.8,.2,1); }
 .progress-fill.cal{ background:var(--chalk-dim); }
 .progress-fill.protein{ background:var(--protein); }
 .progress-fill.carb{ background:var(--carb); }
@@ -234,6 +261,29 @@ h1.title em{ font-style:normal; color:var(--plate-red); }
   font-size:13px; color:var(--mist); line-height:1.7; padding:14px 16px;
   background:var(--steel-2); border-radius:10px; border:1px dashed var(--line);
 }
+
+/* ================= WEEKLY OVERVIEW ================= */
+.week-card{ margin-bottom:24px; }
+.week-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:20px; flex-wrap:wrap; gap:8px; }
+.week-head h2.h{ margin:0; }
+.week-avg{ font-family:'JetBrains Mono', monospace; font-size:12.5px; color:var(--mist); }
+.week-avg b{ color:var(--brass); font-weight:700; }
+
+.week-chart{ display:flex; align-items:flex-end; gap:10px; height:140px; padding:0 4px; }
+.week-col{ flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; gap:8px; }
+.week-bar-track{ width:100%; height:100px; display:flex; align-items:flex-end; position:relative; }
+.week-bar{
+  width:100%; border-radius:6px 6px 3px 3px; background:var(--brass);
+  height:0; transition:height 0.6s cubic-bezier(.2,.8,.2,1);
+}
+.week-bar.over{ background:var(--plate-red); }
+.week-bar.today{ background:var(--protein); }
+.week-target-line{
+  position:absolute; left:-4px; right:-4px; height:2px; background:var(--chalk-dim);
+  opacity:0.5; border-top:1px dashed var(--chalk-dim); background:none;
+}
+.week-col .wd{ font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--mist); }
+.week-col .wv{ font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--chalk-dim); }
 
 /* ================= ARTICLE ================= */
 .section-label{
