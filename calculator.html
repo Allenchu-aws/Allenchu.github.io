@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>計算機 — 重量科學</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .user-bar{ display:flex; align-items:center; gap:10px; margin-bottom:20px; padding:10px 16px; background:var(--steel,#24282b); border:1px solid var(--line); border-radius:12px; font-size:13px; }
+  .user-bar .email{ flex:1; color:var(--chalk-dim,#c8c3ba); font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .logout-btn{ background:none; border:1px solid var(--line); color:var(--mist); font-size:12px; padding:6px 12px; border-radius:999px; cursor:pointer; }
+  .logout-btn:hover{ border-color:var(--plate-red,#c1432e); color:var(--plate-red,#c1432e); }
+  .save-note{ font-size:12px; color:var(--mist); margin-top:10px; text-align:center; min-height:16px; font-family:'JetBrains Mono',monospace; }
+  .save-note.ok{ color:var(--teal,#3f7d6e); }
+</style>
 </head>
 <body>
 
@@ -23,7 +31,13 @@
   <section class="hero">
     <div class="eyebrow">STEP 01</div>
     <h1 class="title">算出你的<br><em>每日目標</em>。</h1>
-    <p class="lede">輸入身體數據，算出每日該吃多少熱量、多少蛋白質／碳水／脂肪。</p>
+    <p class="lede">輸入身體數據，算出每日該吃多少熱量、多少蛋白質／碳水／脂肪。登入後資料會自動儲存。</p>
+
+    <!-- user bar -->
+    <div class="user-bar" id="userBar" style="display:none;">
+      <span class="email" id="userEmail"></span>
+      <button class="logout-btn" id="logoutBtn">登出</button>
+    </div>
 
     <div class="calc">
       <div class="calc-grid">
@@ -66,6 +80,7 @@
         </div>
       </div>
       <button class="calc-btn" id="calcBtn">計算我的熱量與巨量營養素</button>
+      <div class="save-note" id="saveNote"></div>
     </div>
 
     <div class="results" id="results">
@@ -115,7 +130,6 @@
       </div>
 
       <div class="goal-note" id="goalNote"></div>
-
       <a class="calc-secondary-btn" href="foodlog.html">目標存好了 → 去記錄今天飲食</a>
     </div>
   </section>
@@ -124,12 +138,84 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <script>
   const genderSeg = document.getElementById('genderSeg');
   const goalSeg = document.getElementById('goalSeg');
   let gender = 'male';
   let goal = 'maintain';
+  let currentUser = null;
 
+  /* ================= Supabase Auth ================= */
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if(session){
+      currentUser = session.user;
+      document.getElementById('userBar').style.display = 'flex';
+      document.getElementById('userEmail').textContent = session.user.email;
+      await loadProfile();
+    } else {
+      currentUser = null;
+      document.getElementById('userBar').style.display = 'none';
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+    await supabaseClient.auth.signOut();
+    window.location.href = 'foodlog.html';
+  });
+
+  /* ================= 讀取 profile 帶入表單 ================= */
+  async function loadProfile(){
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('id', currentUser.id)
+      .single();
+
+    if(error || !data) return;
+
+    if(data.gender){
+      gender = data.gender;
+      genderSeg.querySelectorAll('button').forEach(b=>{
+        b.classList.toggle('active', b.dataset.val === data.gender);
+      });
+    }
+    if(data.age) document.getElementById('age').value = data.age;
+    if(data.height_cm) document.getElementById('height').value = data.height_cm;
+    if(data.weight_kg) document.getElementById('weight').value = data.weight_kg;
+    if(data.activity){
+      document.getElementById('activity').value = data.activity;
+    }
+    if(data.goal){
+      goal = data.goal;
+      goalSeg.querySelectorAll('button').forEach(b=>{
+        b.classList.toggle('active', b.dataset.val === data.goal);
+      });
+    }
+  }
+
+  /* ================= 儲存 profile ================= */
+  async function saveProfile(age, height, weight, activity, goal, gender){
+    if(!currentUser) return;
+    const { error } = await supabaseClient.from('profiles').upsert({
+      id: currentUser.id,
+      gender, age, height_cm: height, weight_kg: weight,
+      activity: String(activity), goal,
+      updated_at: new Date().toISOString()
+    });
+    const noteEl = document.getElementById('saveNote');
+    if(error){
+      noteEl.textContent = '資料儲存失敗：' + error.message;
+      noteEl.classList.remove('ok');
+    } else {
+      noteEl.textContent = '✓ 身體數據已儲存';
+      noteEl.classList.add('ok');
+      setTimeout(()=>{ noteEl.textContent = ''; }, 3000);
+    }
+  }
+
+  /* ================= Segment buttons ================= */
   genderSeg.querySelectorAll('button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       genderSeg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
@@ -152,7 +238,8 @@
     bulk: '目標熱量 = TDEE × 1.1（約 10% 盈餘），控制盈餘幅度以減少脂肪堆積。'
   };
 
-  document.getElementById('calcBtn').addEventListener('click', ()=>{
+  /* ================= 計算 ================= */
+  document.getElementById('calcBtn').addEventListener('click', async ()=>{
     const age = parseFloat(document.getElementById('age').value);
     const height = parseFloat(document.getElementById('height').value);
     const weight = parseFloat(document.getElementById('weight').value);
@@ -174,17 +261,14 @@
     const proteinPerKg = goal === 'cut' ? 2.2 : 2.0;
     const proteinG = weight * proteinPerKg;
     const proteinK = proteinG * 4;
-
     const fatK = target * 0.25;
     const fatG = fatK / 9;
-
     const carbK = Math.max(target - proteinK - fatK, 0);
     const carbG = carbK / 4;
 
     document.getElementById('bmrOut').innerHTML = Math.round(bmr) + '<small>kcal</small>';
     document.getElementById('tdeeOut').innerHTML = Math.round(tdee) + '<small>kcal</small>';
     document.getElementById('targetOut').innerHTML = Math.round(target) + '<small>kcal</small>';
-
     document.getElementById('proteinG').textContent = Math.round(proteinG) + 'g';
     document.getElementById('proteinK').textContent = Math.round(proteinK) + ' kcal';
     document.getElementById('carbG').textContent = Math.round(carbG) + 'g';
@@ -208,13 +292,16 @@
     document.getElementById('results').classList.add('show');
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'nearest'});
 
-    // 目標存在瀏覽器本機，供「飲食紀錄」頁面讀取比對進度
+    // 存在瀏覽器本機供飲食紀錄頁比對
     localStorage.setItem('dietTarget', JSON.stringify({
       calories: Math.round(target),
       protein: Math.round(proteinG),
       carb: Math.round(carbG),
       fat: Math.round(fatG)
     }));
+
+    // 同步存到 Supabase profiles
+    await saveProfile(age, height, weight, activity, goal, gender);
   });
 </script>
 
